@@ -1,0 +1,15 @@
+__pycache__/
+*.pyc
+assets/*.ico
+assets/*.svg
+assets/*.png
+node_modules/
+.DS_Store
+.env
+*.log
+
+# VS Code
+.vscode/
+
+# Windows
+Thumbs.db
