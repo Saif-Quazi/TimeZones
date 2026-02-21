@@ -1,5 +1,11 @@
 [
-    {"city": "New York"},
-    {"city": "London"},
-    {"city": "Tokyo" }
+    {
+        "city": "New York"
+    },
+    {
+        "city": "London"
+    },
+    {
+        "city": "Tokyo"
+    }
 ]

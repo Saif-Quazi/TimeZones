@@ -1,6 +1,6 @@
 # Timezones
 
-Simple world clock widget for Windows, built with Python.
+Simple timezones widget for Windows, built with Python.
 
 ## Local Setup
 
