@@ -1,3 +1,4 @@
+import os
 import sys
 import uuid
 from datetime import datetime
@@ -388,6 +389,13 @@ replace_main_widget = utils.replace_main_widget
 def main():
     app = QtWidgets.QApplication(sys.argv)
     app.setQuitOnLastWindowClosed(False)
+    
+    icon_candidates = utils.get_tray_icon_candidates()
+    for icon_path in icon_candidates:
+        if os.path.exists(icon_path):
+            app.setWindowIcon(QtGui.QIcon(icon_path))
+            break
+    
     mw = MainWidget()
     try:
         mw.setWindowOpacity(0.0)

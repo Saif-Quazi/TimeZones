@@ -22,6 +22,10 @@ class SettingsWindow(QtWidgets.QWidget):
         self.setObjectName("settingsWindow")
         self.setWindowTitle("TimeZones | Widget Settings")
         self.setFixedSize(360, 560)
+        
+        icon_path = os.path.join(os.path.dirname(__file__), "assets", "timezones.ico")
+        if os.path.exists(icon_path):
+            self.setWindowIcon(QtGui.QIcon(icon_path))
         self.setStyleSheet(
             """
             #settingsWindow {
