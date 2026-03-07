@@ -304,6 +304,8 @@ class MainWidget(QtWidgets.QWidget):
                 self.timer.start()
             except Exception:
                 pass
+            # After rebuild, fetch times for all cities
+            self._fetch_all_times()
             return
         self._gen += 1
         gen = self._gen
@@ -322,6 +324,19 @@ class MainWidget(QtWidgets.QWidget):
                 pass
             except Exception:
                 pass
+            try:
+                utils.EXECUTOR.submit(self._worker, i, c, wid, gen)
+            except Exception:
+                pass
+
+    def _fetch_all_times(self):
+        """Fetch times for all cities in the current widget."""
+        self._gen += 1
+        gen = self._gen
+        wid = self._id
+        n = len(self.cities)
+        for i in range(n):
+            c = self.cities[i]
             try:
                 utils.EXECUTOR.submit(self._worker, i, c, wid, gen)
             except Exception:
