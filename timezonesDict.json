@@ -1,4 +1,5 @@
 {
+    "new york": "America/New_York",
     "jakarta": "Asia/Jakarta",
     "dhaka": "Asia/Dhaka",
     "tokyo": "Asia/Tokyo",
@@ -44,7 +45,6 @@
     "surat": "Asia/Kolkata",
     "madrid": "Europe/Madrid",
     "toronto": "America/Toronto",
-    "ho chi minh city": "Asia/Ho_Chi_Minh",
     "baghdad": "Asia/Baghdad",
     "suzhou": "Asia/Shanghai",
     "houston": "America/Chicago",
