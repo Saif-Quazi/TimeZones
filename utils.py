@@ -87,6 +87,44 @@ def rootDir() -> str:
     return os.path.dirname(__file__)
 
 
+def getUserDataDir() -> str:
+    """Get the persistent user data directory for storing custom configs."""
+    if sys.platform.startswith("win"):
+        appdata = os.environ.get("LOCALAPPDATA", os.path.expanduser("~\\AppData\\Local"))
+        userDir = os.path.join(appdata, "TimeZones")
+    else:
+        userDir = os.path.expanduser("~/.local/share/timezones")
+    
+    try:
+        os.makedirs(userDir, exist_ok=True)
+    except Exception:
+        pass
+    
+    return userDir
+
+
+def initializeUserData() -> None:
+    """Copy bundled defaults to user data directory on first run."""
+    try:
+        userDir = getUserDataDir()
+        bundledDir = rootDir()
+        
+        # Copy timezones.json if it doesn't exist
+        userTimezonesFile = os.path.join(userDir, "timezones.json")
+        if not os.path.exists(userTimezonesFile):
+            bundledFile = os.path.join(bundledDir, "timezones.json")
+            if os.path.exists(bundledFile):
+                try:
+                    with open(bundledFile, "r", encoding="utf-8") as f:
+                        data = f.read()
+                    with open(userTimezonesFile, "w", encoding="utf-8") as f:
+                        f.write(data)
+                except Exception:
+                    pass
+    except Exception:
+        pass
+
+
 def loadCityTimezones(filename: Optional[str] = None) -> Dict[str, str]:
     if filename is None:
         filename = os.path.join(rootDir(), "timezonesDict.json")
@@ -116,7 +154,17 @@ def loadCityTimezones(filename: Optional[str] = None) -> Dict[str, str]:
 
 def loadCityEntries(filename: Optional[str] = None) -> List[CityEntry]:
     if filename is None:
-        filename = os.path.join(rootDir(), "timezones.json")
+        # Try user data directory first, then bundled location
+        userDir = getUserDataDir()
+        userFile = os.path.join(userDir, "timezones.json")
+        
+        # Try user file first (has priority)
+        if os.path.exists(userFile):
+            filename = userFile
+        else:
+            # Fall back to bundled file
+            filename = os.path.join(rootDir(), "timezones.json")
+    
     try:
         with open(filename, "r", encoding="utf-8") as f:
             data = json.load(f)
@@ -155,7 +203,9 @@ def loadCityEntries(filename: Optional[str] = None) -> List[CityEntry]:
 
 def saveCityEntries(entries: List[CityEntry], filename: Optional[str] = None) -> None:
     if filename is None:
-        filename = os.path.join(rootDir(), "timezones.json")
+        # Always save to user data directory
+        userDir = getUserDataDir()
+        filename = os.path.join(userDir, "timezones.json")
 
     payload: List[Dict[str, str]] = []
     for entry in entries:
@@ -171,8 +221,25 @@ def saveCityEntries(entries: List[CityEntry], filename: Optional[str] = None) ->
         ):
             payload.append({"label": label.strip(), "tz": timezone.strip()})
 
-    with open(filename, "w", encoding="utf-8") as f:
-        json.dump(payload, f, indent=4)
+    # Ensure directory exists
+    try:
+        os.makedirs(os.path.dirname(filename), exist_ok=True)
+    except Exception:
+        pass
+    
+    # Atomic write: write to temp file first, then rename
+    try:
+        tempFilename = filename + ".tmp"
+        with open(tempFilename, "w", encoding="utf-8") as f:
+            json.dump(payload, f, indent=4)
+        # Replace the original file with the temp file
+        if os.path.exists(filename):
+            os.remove(filename)
+        os.rename(tempFilename, filename)
+    except Exception:
+        # Fallback: direct write if atomic write fails
+        with open(filename, "w", encoding="utf-8") as f:
+            json.dump(payload, f, indent=4)
 
 
 def loadCities(filename: Optional[str] = None) -> List[str]:

@@ -606,7 +606,8 @@ class SettingsWindow(QtWidgets.QWidget):
         try:
             saveFn = getattr(utils, "saveCityEntries", None)
             if saveFn is not None:
-                saveFn(entries, os.path.join(os.path.dirname(__file__), "timezones.json"))
+                # Save to user data directory (no explicit path needed)
+                saveFn(entries)
             else:
                 with open(
                     os.path.join(os.path.dirname(__file__), "timezones.json"),

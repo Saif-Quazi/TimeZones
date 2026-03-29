@@ -405,6 +405,12 @@ class MainWidget(QtWidgets.QWidget):
 
 
 def main():
+    # Initialize persistent user data directory on startup
+    try:
+        utils.initializeUserData()
+    except Exception:
+        pass
+    
     app = QtWidgets.QApplication(sys.argv)
     app.setQuitOnLastWindowClosed(False)
 
