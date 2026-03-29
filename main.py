@@ -9,6 +9,8 @@ from PyQt6 import QtCore, QtGui, QtWidgets
 import utils
 from settings import SettingsWindow
 
+unknownCityDisplay = "Invalid/Unknown City"
+
 
 class SmallClock(QtWidgets.QWidget):
     def __init__(self, parent: Optional[QtWidgets.QWidget] = None):
@@ -20,7 +22,7 @@ class SmallClock(QtWidgets.QWidget):
         self.time = t
         self.update()
 
-    def paintEvent(self, a0):
+    def paintEvent(self, event):
         p = QtGui.QPainter(self)
         p.setRenderHint(QtGui.QPainter.RenderHint.Antialiasing)
         r = self.rect().adjusted(4, 4, -4, -4)
@@ -32,14 +34,14 @@ class SmallClock(QtWidgets.QWidget):
             cx, cy = float(c.x()), float(c.y())
             radius = r.width() // 2
             hour = (self.time.hour % 12) + (self.time.minute / 60.0)
-            angle_deg = (hour / 12.0) * 360.0 - 90
+            angleDeg = (hour / 12.0) * 360.0 - 90
             import math
 
             hw = 1.2
             p.setPen(
                 QtGui.QPen(QtGui.QColor("#fff"), hw, cap=QtCore.Qt.PenCapStyle.RoundCap)
             )
-            rad = math.radians(angle_deg)
+            rad = math.radians(angleDeg)
             p.drawLine(
                 QtCore.QPointF(cx, cy),
                 QtCore.QPointF(
@@ -47,16 +49,16 @@ class SmallClock(QtWidgets.QWidget):
                 ),
             )
             minute = self.time.minute
-            m_deg = (minute / 60.0) * 360.0 - 90
-            m_rad = math.radians(m_deg)
+            minuteDeg = (minute / 60.0) * 360.0 - 90
+            minuteRad = math.radians(minuteDeg)
             p.setPen(
                 QtGui.QPen(QtGui.QColor("#fff"), hw, cap=QtCore.Qt.PenCapStyle.RoundCap)
             )
             p.drawLine(
                 QtCore.QPointF(cx, cy),
                 QtCore.QPointF(
-                    cx + 0.6 * radius * math.cos(m_rad),
-                    cy + 0.6 * radius * math.sin(m_rad),
+                    cx + 0.6 * radius * math.cos(minuteRad),
+                    cy + 0.6 * radius * math.sin(minuteRad),
                 ),
             )
         p.end()
@@ -65,45 +67,51 @@ class SmallClock(QtWidgets.QWidget):
 class MainWidget(QtWidgets.QWidget):
     def __init__(self, parent=None):
         super().__init__(parent)
-        self._id = str(uuid.uuid4())
-        self._gen = 0
+        self.id = str(uuid.uuid4())
+        self.gen = 0
         self.setWindowFlags(
             QtCore.Qt.WindowType.FramelessWindowHint | QtCore.Qt.WindowType.Tool
         )
         self.setAttribute(QtCore.Qt.WidgetAttribute.WA_TranslucentBackground)
-        self.cities = utils.load_cities()[:9]
+
+        self.entries = utils.loadCityEntries()[:9]
+        self.cities: List[str] = [
+            e.get("label") or e.get("city") or "" for e in self.entries
+        ]
+        self.timezones: List[Optional[str]] = [e.get("tz") for e in self.entries]
+
         self.clocks: List[SmallClock] = []
-        self.city_labels: List[QtWidgets.QLabel] = []
-        self.time_labels: List[QtWidgets.QLabel] = []
-        cols, rows = self._best_grid(len(self.cities))
-        iw, ih = 100, 100
-        w = max(120, cols * iw + 16)
-        h = max(100, rows * ih + 16)
-        self.setFixedSize(w, h)
+        self.cityLabels: List[QtWidgets.QLabel] = []
+        self.timeLabels: List[QtWidgets.QLabel] = []
+        cols, rows = self.bestGrid(len(self.cities))
+        itemWidth, itemHeight = 100, 100
+        width = max(120, cols * itemWidth + 16)
+        height = max(100, rows * itemHeight + 16)
+        self.setFixedSize(width, height)
         try:
-            utils.move_to_top_right(self, margin=10)
+            utils.moveToTopRight(self, margin=10)
         except Exception:
             pass
         self.bg = QtWidgets.QWidget(self)
-        self.bg.setGeometry(0, 0, w, h)
+        self.bg.setGeometry(0, 0, width, height)
         self.bg.setStyleSheet(
             "background: rgba(35, 39, 46, 0.85); border-radius: 16px;"
         )
         self.grid = QtWidgets.QGridLayout(self.bg)
         self.grid.setContentsMargins(8, 8, 8, 8)
         self.grid.setSpacing(4)
-        self._rebuild_grid()
+        self.rebuildGrid()
         self.timer = QtCore.QTimer(self)
-        self.timer.timeout.connect(self._sync)
+        self.timer.timeout.connect(self.sync)
         self.timer.setInterval(1000)
         self.timer.start()
-        utils.EMITTER.sig.connect(self._on_result)
-        for lbl in self.time_labels:
-            lbl.setText("--:--")
-        self._sync()
+        utils.emitter.sig.connect(self.onResult)
+        for label in self.timeLabels:
+            label.setText("--:--")
+        self.sync()
 
     @staticmethod
-    def _best_grid(n: int):
+    def bestGrid(n: int):
         if n <= 1:
             return 1, 1
         import math
@@ -114,7 +122,7 @@ class MainWidget(QtWidgets.QWidget):
             return n, 1
         return cols, rows
 
-    def _clear_grid(self):
+    def clearGrid(self):
         if not hasattr(self, "grid") or self.grid is None:
             return
         while self.grid.count():
@@ -129,167 +137,175 @@ class MainWidget(QtWidgets.QWidget):
                 except Exception:
                     pass
                 continue
-            sub_layout = item.layout()
-            if sub_layout is not None:
-                while sub_layout.count():
-                    sub_item = sub_layout.takeAt(0)
-                    if sub_item is None:
+            subLayout = item.layout()
+            if subLayout is not None:
+                while subLayout.count():
+                    subItem = subLayout.takeAt(0)
+                    if subItem is None:
                         continue
-                    sub_widget = sub_item.widget()
-                    if sub_widget is not None:
+                    subWidget = subItem.widget()
+                    if subWidget is not None:
                         try:
-                            sub_widget.setParent(None)
-                            sub_widget.deleteLater()
+                            subWidget.setParent(None)
+                            subWidget.deleteLater()
                         except Exception:
                             pass
                         continue
-                    nested = sub_item.layout()
-                    if nested is not None:
-                        while nested.count():
-                            ni = nested.takeAt(0)
-                            if ni is None:
+                    nestedLayout = subItem.layout()
+                    if nestedLayout is not None:
+                        while nestedLayout.count():
+                            nestedItem = nestedLayout.takeAt(0)
+                            if nestedItem is None:
                                 continue
-                            nw = ni.widget()
-                            if nw is not None:
+                            nestedWidget = nestedItem.widget()
+                            if nestedWidget is not None:
                                 try:
-                                    nw.setParent(None)
-                                    nw.deleteLater()
+                                    nestedWidget.setParent(None)
+                                    nestedWidget.deleteLater()
                                 except Exception:
                                     pass
 
-    def _rebuild_grid(self):
+    def rebuildGrid(self):
         self.clocks = []
-        self.city_labels = []
-        self.time_labels = []
+        self.cityLabels = []
+        self.timeLabels = []
 
         try:
-            self._clear_grid()
+            self.clearGrid()
         except Exception:
             pass
 
-        self.cities = utils.load_cities()[:9]
-        cols, rows = self._best_grid(len(self.cities))
-        iw, ih = 100, 100
-        w = max(120, cols * iw + 16)
-        h = max(100, rows * ih + 16)
+        self.entries = utils.loadCityEntries()[:9]
+        self.cities = [e.get("label") or e.get("city") or "" for e in self.entries]
+        self.timezones = [e.get("tz") for e in self.entries]
+        cols, rows = self.bestGrid(len(self.cities))
+        itemWidth, itemHeight = 100, 100
+        width = max(120, cols * itemWidth + 16)
+        height = max(100, rows * itemHeight + 16)
         try:
             try:
-                prev = self.geometry()
+                previousGeometry = self.geometry()
             except Exception:
-                prev = None
-            if prev is None:
-                old = globals().get("_APP_MAIN_WIDGET")
-                if old is not None and old is not self:
+                previousGeometry = None
+            if previousGeometry is None:
+                oldWidget = globals().get("_APP_MAIN_WIDGET")
+                if oldWidget is not None and oldWidget is not self:
                     try:
-                        prev = old.geometry()
+                        previousGeometry = oldWidget.geometry()
                     except Exception:
-                        prev = None
+                        previousGeometry = None
         except Exception:
-            prev = None
+            previousGeometry = None
         try:
-            self.setFixedSize(w, h)
+            self.setFixedSize(width, height)
         except Exception:
             pass
         try:
-            if prev is not None:
+            if previousGeometry is not None:
                 try:
-                    scr = QtWidgets.QApplication.primaryScreen()
-                    avail = (
-                        scr.availableGeometry()
-                        if scr is not None
+                    screen = QtWidgets.QApplication.primaryScreen()
+                    availableGeometry = (
+                        screen.availableGeometry()
+                        if screen is not None
                         else QtCore.QRect(0, 0, 800, 600)
                     )
-                    desired_x = prev.x() + prev.width() - w
-                    min_x = avail.x()
-                    max_x = avail.x() + avail.width() - w
-                    desired_x = max(min_x, min(desired_x, max_x))
-                    desired_y = max(
-                        avail.y(), min(prev.y(), avail.y() + avail.height() - h)
+                    desiredX = previousGeometry.x() + previousGeometry.width() - width
+                    minX = availableGeometry.x()
+                    maxX = availableGeometry.x() + availableGeometry.width() - width
+                    desiredX = max(minX, min(desiredX, maxX))
+                    desiredY = max(
+                        availableGeometry.y(),
+                        min(
+                            previousGeometry.y(),
+                            availableGeometry.y() + availableGeometry.height() - height,
+                        ),
                     )
-                    self.setGeometry(desired_x, desired_y, w, h)
+                    self.setGeometry(desiredX, desiredY, width, height)
                     try:
-                        self.bg.setGeometry(0, 0, w, h)
+                        self.bg.setGeometry(0, 0, width, height)
                     except Exception:
                         pass
                 except Exception:
                     try:
-                        self.bg.setGeometry(0, 0, w, h)
-                        utils.move_to_top_right(self, margin=10)
+                        self.bg.setGeometry(0, 0, width, height)
+                        utils.moveToTopRight(self, margin=10)
                     except Exception:
                         pass
             else:
                 try:
-                    self.bg.setGeometry(0, 0, w, h)
+                    self.bg.setGeometry(0, 0, width, height)
                 except Exception:
                     pass
-                utils.move_to_top_right(self, margin=10)
+                utils.moveToTopRight(self, margin=10)
         except Exception:
             try:
-                self.bg.setGeometry(0, 0, w, h)
+                self.bg.setGeometry(0, 0, width, height)
             except Exception:
                 pass
 
         for i, city in enumerate(self.cities):
             row = i // cols
             col = i % cols
-            v = QtWidgets.QVBoxLayout()
-            v.setSpacing(0)
+            columnLayout = QtWidgets.QVBoxLayout()
+            columnLayout.setSpacing(0)
             clock = SmallClock(self.bg)
-            v.addWidget(clock, alignment=QtCore.Qt.AlignmentFlag.AlignCenter)
-            lu = QtWidgets.QVBoxLayout()
-            lu.setSpacing(2)
-            cl = QtWidgets.QLabel(city)
-            cl.setStyleSheet(
+            columnLayout.addWidget(clock, alignment=QtCore.Qt.AlignmentFlag.AlignCenter)
+            labelsLayout = QtWidgets.QVBoxLayout()
+            labelsLayout.setSpacing(2)
+            cityLabel = QtWidgets.QLabel(city)
+            cityLabel.setStyleSheet(
                 "font-size: 14px; color: #eee; text-align: center; background: none;"
             )
-            cl.setAlignment(QtCore.Qt.AlignmentFlag.AlignCenter)
-            lu.addWidget(cl, alignment=QtCore.Qt.AlignmentFlag.AlignCenter)
-            tl = QtWidgets.QLabel("--:--")
-            tl.setStyleSheet(
+            cityLabel.setAlignment(QtCore.Qt.AlignmentFlag.AlignCenter)
+            labelsLayout.addWidget(cityLabel, alignment=QtCore.Qt.AlignmentFlag.AlignCenter)
+            timeLabel = QtWidgets.QLabel("--:--")
+            timeLabel.setStyleSheet(
                 "font-size: 14px; color: #eee; text-align: center; background: none;"
             )
-            tl.setAlignment(QtCore.Qt.AlignmentFlag.AlignCenter)
-            lu.addWidget(tl, alignment=QtCore.Qt.AlignmentFlag.AlignCenter)
-            v.addLayout(lu)
-            self.grid.addLayout(v, row, col)
+            timeLabel.setAlignment(QtCore.Qt.AlignmentFlag.AlignCenter)
+            labelsLayout.addWidget(timeLabel, alignment=QtCore.Qt.AlignmentFlag.AlignCenter)
+            columnLayout.addLayout(labelsLayout)
+            self.grid.addLayout(columnLayout, row, col)
             self.clocks.append(clock)
-            self.city_labels.append(cl)
-            self.time_labels.append(tl)
+            self.cityLabels.append(cityLabel)
+            self.timeLabels.append(timeLabel)
 
-        for lbl in self.time_labels:
-            lbl.setText("--:--")
+        for label in self.timeLabels:
+            label.setText("--:--")
 
-        self._gen += 1
+        self.gen += 1
 
-    def _sync(self):
+    def sync(self):
         start = datetime.now()
-        self.update_widget()
+        self.updateWidget()
         elapsed = (datetime.now() - start).total_seconds()
-        secs = 60 - datetime.now().second
-        if secs <= elapsed:
+        secondsUntilMinute = 60 - datetime.now().second
+        if secondsUntilMinute <= elapsed:
             self.timer.setInterval(1000)
         else:
-            self.timer.setInterval(max(100, int((secs - elapsed) * 1000)))
+            self.timer.setInterval(max(100, int((secondsUntilMinute - elapsed) * 1000)))
         try:
             self.timer.timeout.disconnect()
         except Exception:
             pass
-        self.timer.timeout.connect(self._minute)
+        self.timer.timeout.connect(self.onMinuteTick)
 
-    def _minute(self):
-        self.update_widget()
+    def onMinuteTick(self):
+        self.updateWidget()
         try:
             self.timer.setInterval(60000)
         except Exception:
             self.timer.setInterval(1000)
 
-    def update_widget(self):
-        self.cities = utils.load_cities()[:9]
-        n = len(self.cities)
-        if n != len(self.clocks):
+    def updateWidget(self):
+        self.entries = utils.loadCityEntries()[:9]
+        self.cities = [e.get("label") or e.get("city") or "" for e in self.entries]
+        self.timezones = [e.get("tz") for e in self.entries]
+        cityCount = len(self.cities)
+        if cityCount != len(self.clocks):
             try:
-                current = globals().get("_APP_MAIN_WIDGET")
-                if current is not None and current is not self:
+                currentWidget = globals().get("_APP_MAIN_WIDGET")
+                if currentWidget is not None and currentWidget is not self:
                     return
             except Exception:
                 pass
@@ -298,84 +314,89 @@ class MainWidget(QtWidgets.QWidget):
             except Exception:
                 pass
             try:
-                self._rebuild_grid()
+                self.rebuildGrid()
             except Exception:
                 pass
             try:
                 self.timer.start()
             except Exception:
                 pass
-            # After rebuild, fetch times for all cities
-            self._fetch_all_times()
+            self.fetchAllTimes()
             return
-        self._gen += 1
-        gen = self._gen
-        wid = self._id
-        for i in range(n):
-            c = self.cities[i]
+        self.gen += 1
+        currentGen = self.gen
+        widgetId = self.id
+        for i in range(cityCount):
+            city = self.cities[i]
+            timezone = self.timezones[i] if i < len(self.timezones) else None
             try:
-                self.city_labels[i].setText(c)
+                self.cityLabels[i].setText(city)
             except Exception:
                 pass
             try:
-                self.time_labels[i].setText("--:--")
-            except Exception:
-                pass
-            try:
-                pass
-            except Exception:
-                pass
-            try:
-                utils.EXECUTOR.submit(self._worker, i, c, wid, gen)
+                utils.executor.submit(self.worker, i, city, timezone, widgetId, currentGen)
             except Exception:
                 pass
 
-    def _fetch_all_times(self):
-        """Fetch times for all cities in the current widget."""
-        self._gen += 1
-        gen = self._gen
-        wid = self._id
-        n = len(self.cities)
-        for i in range(n):
-            c = self.cities[i]
+    def fetchAllTimes(self):
+        self.gen += 1
+        currentGen = self.gen
+        widgetId = self.id
+        cityCount = len(self.cities)
+        for i in range(cityCount):
+            city = self.cities[i]
+            timezone = self.timezones[i] if i < len(self.timezones) else None
             try:
-                utils.EXECUTOR.submit(self._worker, i, c, wid, gen)
+                utils.executor.submit(self.worker, i, city, timezone, widgetId, currentGen)
             except Exception:
                 pass
 
-    def _worker(self, index: int, city: str, wid: str, gen: int):
-        display, tz = utils.fuzzy_city_lookup(city, utils.load_city_timezones())
-        tstr = "--:--"
-        parsed = None
-        if tz:
-            tstr = utils.fetch_time(tz)
-            try:
-                dt = datetime.strptime(tstr, "%I:%M %p")
-                parsed = dt.time()
-            except Exception:
-                parsed = None
-        utils.EMITTER.sig.emit(index, display or city.title(), tstr, parsed, wid, gen)
-
-    def _on_result(
-        self, index: int, display: str, time_str: str, parsed, wid: str, gen: int
+    def worker(
+        self, index: int, label: str, timezone: Optional[str], widgetId: str, generation: int
     ):
-        if wid != self._id:
+        display = (label or "").strip() or unknownCityDisplay
+
+        if not timezone:
+            utils.emitter.sig.emit(
+                index,
+                display,
+                "--:--",
+                None,
+                widgetId,
+                generation,
+            )
             return
-        if gen != self._gen:
+
+        timeString = utils.fetchTime(timezone)
+        parsedTime = None
+        try:
+            dt = datetime.strptime(timeString, "%I:%M %p")
+            parsedTime = dt.time()
+        except Exception:
+            parsedTime = None
+
+        utils.emitter.sig.emit(index, display, timeString, parsedTime, widgetId, generation)
+
+    def onResult(
+        self, index: int, display: str, timeString: str, parsedTime, widgetId: str, generation: int
+    ):
+        if widgetId != self.id:
             return
-        if index < 0 or index >= len(self.city_labels):
+        if generation != self.gen:
+            return
+        if index < 0 or index >= len(self.cityLabels):
             return
         try:
-            self.city_labels[index].setText(display)
+            self.cityLabels[index].setText(display)
         except Exception:
             pass
         try:
-            self.time_labels[index].setText(time_str)
+            self.timeLabels[index].setText(timeString)
         except Exception:
             pass
         try:
-            if parsed is not None:
-                self.clocks[index].setTime(parsed)
+            if parsedTime is not None:
+                self.clocks[index].setTime(parsedTime)
         except Exception:
             try:
                 self.clocks[index].setTime(None)
@@ -383,83 +404,80 @@ class MainWidget(QtWidgets.QWidget):
                 pass
 
 
-replace_main_widget = utils.replace_main_widget
-
-
 def main():
     app = QtWidgets.QApplication(sys.argv)
     app.setQuitOnLastWindowClosed(False)
-    
-    icon_candidates = utils.get_tray_icon_candidates()
-    for icon_path in icon_candidates:
-        if os.path.exists(icon_path):
-            app.setWindowIcon(QtGui.QIcon(icon_path))
+
+    iconCandidates = utils.getTrayIconCandidates()
+    for iconPath in iconCandidates:
+        if os.path.exists(iconPath):
+            app.setWindowIcon(QtGui.QIcon(iconPath))
             break
-    
-    mw = MainWidget()
+
+    mainWidget = MainWidget()
     try:
-        mw.setWindowOpacity(0.0)
+        mainWidget.setWindowOpacity(0.0)
     except Exception:
         pass
-    utils.move_to_top_right(mw, margin=10)
-    mw.show()
-    utils.fade_in(mw, duration=300)
-    settings = SettingsWindow()
+    utils.moveToTopRight(mainWidget, margin=10)
+    mainWidget.show()
+    utils.fadeIn(mainWidget, duration=300)
+    settingsWindow = SettingsWindow()
 
-    def on_saved(cities: List[str]):
+    def onSaved(cities: List[str]):
         try:
-            mw = globals().get("_APP_MAIN_WIDGET")
-            if mw is not None:
+            currentMainWidget = globals().get("_APP_MAIN_WIDGET")
+            if currentMainWidget is not None:
                 try:
-                    mw.update_widget()
+                    currentMainWidget.updateWidget()
                 except Exception:
-                    neww = MainWidget()
-                    utils.replace_main_widget(neww)
+                    newWidget = MainWidget()
+                    utils.replaceMainWidget(newWidget)
             else:
-                neww = MainWidget()
-                utils.replace_main_widget(neww)
-            settings.status_label.setText("Saved")
+                newWidget = MainWidget()
+                utils.replaceMainWidget(newWidget)
+            settingsWindow.statusLabel.setText("Saved")
         except Exception:
             pass
 
     try:
-        settings.settings_saved.connect(on_saved)
+        settingsWindow.settingsSaved.connect(onSaved)
     except Exception:
         pass
 
-    tray_icon = utils.pick_tray_icon()
-    tray = QtWidgets.QSystemTrayIcon(tray_icon, parent=app)
+    trayIcon = utils.pickTrayIcon()
+    tray = QtWidgets.QSystemTrayIcon(trayIcon, parent=app)
     menu = QtWidgets.QMenu()
-    act_settings = QtGui.QAction("Settings", menu)
-    act_quit = QtGui.QAction("Quit", menu)
-    menu.addAction(act_settings)
-    menu.addAction(act_quit)
-    act_settings.triggered.connect(lambda: settings.show())
+    actionSettings = QtGui.QAction("Settings", menu)
+    actionQuit = QtGui.QAction("Quit", menu)
+    menu.addAction(actionSettings)
+    menu.addAction(actionQuit)
+    actionSettings.triggered.connect(lambda: settingsWindow.show())
 
-    def _quit():
+    def quitApp():
         try:
-            utils.EXECUTOR.shutdown(wait=False)
+            utils.executor.shutdown(wait=False)
         except Exception:
             pass
         try:
-            settings.close()
+            settingsWindow.close()
         except Exception:
             pass
         try:
-            g = globals().get("_APP_MAIN_WIDGET")
-            if g is not None:
-                g.close()
+            appMainWidget = globals().get("_APP_MAIN_WIDGET")
+            if appMainWidget is not None:
+                appMainWidget.close()
         except Exception:
             pass
         QtWidgets.QApplication.quit()
 
-    act_quit.triggered.connect(_quit)
+    actionQuit.triggered.connect(quitApp)
     tray.setContextMenu(menu)
     tray.setToolTip("TimeZones")
     tray.show()
     globals()["_APP_TRAY"] = tray
-    globals()["_APP_SETTINGS_WINDOW"] = settings
-    globals()["_APP_MAIN_WIDGET"] = mw
+    globals()["_APP_SETTINGS_WINDOW"] = settingsWindow
+    globals()["_APP_MAIN_WIDGET"] = mainWidget
     sys.exit(app.exec())
 
 

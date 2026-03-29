@@ -1,11 +1,14 @@
 [
     {
-        "city": "New York"
+        "label": "Tokyo",
+        "tz": "Asia/Tokyo"
     },
     {
-        "city": "London"
+        "label": "London",
+        "tz": "Europe/London"
     },
     {
-        "city": "Tokyo"
+        "label": "Dhaka",
+        "tz": "Asia/Dhaka"
     }
 ]
